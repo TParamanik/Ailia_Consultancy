@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>Ivy Streams</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <link rel='stylesheet' type='text/css' media='screen' href='main.css'>
+</head>
+<body>
+
+    <button id="join-btn">Meet a Doctor</button>
+
+    <div id="stream-wrapper" style="display: none;">
+        <div id="video-streams"></div>
+
+        <div id="stream-controls">
+            <button id="leave-btn">Leave Stream</button>
+            <button id="mic-btn">Mic On</button>
+            <button id="camera-btn">Camera on</button>
+        </div>
+    </div>
+    
+</body>
+<script src="https://cdn.agora.io/sdk/release/AgoraRTC_N-4.7.3.js"></script>
+<script>
+const APP_ID = "03a270886027473a8e14e260485d3503";
+const TOKEN = "007eJxTYNjCoMnNc2ip09+f+24fbgxkOdk74/biUAvDXykCbi57ONcqMBgYJxqZG1hYmBkYmZuYGydapBqapBqZGZhYmKYYmxoYG4enpjUEMjIcKdvPzMgAgSA+C0NuYmYeAwMA748dpg==";
+const CHANNEL = "main";
+
+const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+
+let localTracks = [];
+let remoteUsers = {};
+
+const joinAndDisplayLocalStream = async () => {
+    try {
+        console.log('Joining stream...');
+        client.on('user-published', handleUserJoined);
+        client.on('user-left', handleUserLeft);
+
+        const UID = await client.join(APP_ID, CHANNEL, TOKEN, null);
+        console.log('Joined stream with UID:', UID);
+
+        const [microphoneTrack, cameraTrack] = await Promise.all([AgoraRTC.createMicrophoneAudioTrack(), AgoraRTC.createCameraVideoTrack()]);
+        localTracks.push(microphoneTrack, cameraTrack);
+
+        console.log('Local tracks created:', localTracks);
+
+        const player = `
+            <div class="video-container" id="user-container-${UID}">
+                <div class="video-player" id="user-${UID}"></div>
+            </div>`;
+        document.getElementById('video-streams').insertAdjacentHTML('beforeend', player);
+        
+        cameraTrack.play(`user-${UID}`);
+        await client.publish(localTracks);
+        console.log('Local tracks published');
+    } catch (error) {
+        console.error('Error joining stream:', error);
+    }
+};
+
+const joinStream = async () => {
+    await joinAndDisplayLocalStream();
+    document.getElementById('join-btn').style.display = 'none';
+    document.getElementById('stream-wrapper').style.display = 'block';
+    document.getElementById('stream-controls').style.display = 'flex';
+    console.log('Stream controls displayed');
+};
+
+const handleUserJoined = async (user, mediaType) => {
+    remoteUsers[user.uid] = user;
+    await client.subscribe(user, mediaType);
+
+    if (mediaType === 'video') {
+        let player = document.getElementById(`user-container-${user.uid}`);
+        if (player) {
+            player.remove();
+        }
+        player = `
+            <div class="video-container" id="user-container-${user.uid}">
+                <div class="video-player" id="user-${user.uid}"></div>
+            </div>`;
+        document.getElementById('video-streams').insertAdjacentHTML('beforeend', player);
+        user.videoTrack.play(`user-${user.uid}`);
+    }
+
+    if (mediaType === 'audio') {
+        user.audioTrack.play();
+    }
+};
+
+const handleUserLeft = (user) => {
+    delete remoteUsers[user.uid];
+    document.getElementById(`user-container-${user.uid}`).remove();
+};
+
+const leaveAndRemoveLocalStream = async () => {
+    for (let track of localTracks) {
+        track.stop();
+        track.close();
+    }
+    await client.leave();
+    document.getElementById('join-btn').style.display = 'block';
+    document.getElementById('stream-wrapper').style.display = 'none';
+    document.getElementById('video-streams').innerHTML = '';
+    console.log('Left stream and removed local tracks');
+};
+
+const toggleMic = async (e) => {
+    if (localTracks[0].isMuted()) {
+        await localTracks[0].unmute();
+        e.target.innerText = 'Mic on';
+        e.target.style.backgroundColor = 'cadetblue';
+    } else {
+        await localTracks[0].mute();
+        e.target.innerText = 'Mic off';
+        e.target.style.backgroundColor = '#EE4B2B';
+    }
+};
+
+const toggleCamera = async (e) => {
+    if (localTracks && localTracks[1]) {
+        if (localTracks[1].isMuted()) {
+            await localTracks[1].unmute();
+            e.target.innerText = 'Camera on';
+            e.target.style.backgroundColor = 'cadetblue';
+        } else {
+            await localTracks[1].mute();
+            e.target.innerText = 'Camera off';
+            e.target.style.backgroundColor = '#EE4B2B';
+        }
+    } else {
+        console.error('Local tracks are not properly initialized.');
+    }
+};
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('join-btn').addEventListener('click', joinStream);
+    document.getElementById('leave-btn').addEventListener('click', leaveAndRemoveLocalStream);
+    document.getElementById('mic-btn').addEventListener('click', toggleMic);
+    document.getElementById('camera-btn').addEventListener('click', toggleCamera);
+    console.log('Event listeners attached');
+});
+</script>
+</html>
